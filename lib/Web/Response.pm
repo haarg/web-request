@@ -1,12 +1,15 @@
 package Web::Response;
-use Moose;
+use Moo;
 # ABSTRACT: common response class for web frameworks
 
 use HTTP::Headers ();
 use Plack::Util ();
 use URI::Escape ();
 
-use Web::Request::Types ();
+use Web::Request::Types qw(:all);
+use MooX::Types::MooseLike::Base qw(:all);
+use Carp;
+use namespace::clean;
 
 =head1 SYNOPSIS
 
@@ -35,16 +38,16 @@ called.
 
 has status => (
     is      => 'rw',
-    isa     => 'Web::Request::Types::HTTPStatus',
+    isa     => HTTPStatus,
     lazy    => 1,
     default => sub { confess "Status was not supplied" },
 );
 
 has headers => (
     is      => 'rw',
-    isa     => 'Web::Request::Types::HTTP::Headers',
+    isa     => HTTPHeaders,
     lazy    => 1,
-    coerce  => 1,
+    coerce  => \&coerce_HTTPHeaders,
     default => sub { HTTP::Headers->new },
     handles => {
         header           => 'header',
@@ -57,32 +60,31 @@ has headers => (
 
 has content => (
     is      => 'rw',
-    isa     => 'Web::Request::Types::PSGIBody',
+    isa     => PSGIBody,
     lazy    => 1,
-    coerce  => 1,
+    coerce  => \&coerce_PSGIBody,
     default => sub { [] },
 );
 
 has streaming_response => (
     is        => 'rw',
-    isa       => 'CodeRef',
+    isa       => CodeRef,
     predicate => 'has_streaming_response',
 );
 
 has cookies => (
-    traits  => ['Hash'],
     is      => 'rw',
-    isa     => 'HashRef[Str|HashRef[Str]]',
+    isa     => HashRef[AnyOf[Str,HashRef[Str]]],
     lazy    => 1,
     default => sub { +{} },
-    handles => {
-        has_cookies => 'count',
-    },
 );
+sub has_cookies {
+    scalar keys %{ $_[0]->cookies };
+}
 
 has _encoding_obj => (
     is        => 'rw',
-    isa       => 'Object',
+    isa       => Object,
     predicate => 'has_encoding',
     handles   => {
         encoding => 'name',
@@ -245,9 +247,6 @@ sub _date {
     return sprintf("%s, %02d-%s-%04d %02d:%02d:%02d GMT",
                    $WDAY[$wday], $mday, $MON[$mon], $year, $hour, $min, $sec);
 }
-
-__PACKAGE__->meta->make_immutable;
-no Moose;
 
 =head1 CONSTRUCTOR
 

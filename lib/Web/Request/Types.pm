@@ -2,37 +2,91 @@ package Web::Request::Types;
 use strict;
 use warnings;
 
-use Moose::Util::TypeConstraints;
+use MooX::Types::MooseLike;
+use MooX::Types::MooseLike::Base qw(:all);
+use Exporter qw(import);
 
-class_type('HTTP::Headers');
+our @EXPORT_OK;
+our %EXPORT_TAGS = ('all' => \@EXPORT_OK);
 
-subtype 'Web::Request::Types::StringLike',
-    as 'Object',
-    where {
-        return unless overload::Method($_, '""');
-        my $tc = find_type_constraint('Web::Request::Types::PSGIBodyObject');
-        return !$tc->check($_);
-    };
+MooX::Types::MooseLike::register_types([
+    {
+        name => 'PSGIBodyObject',
+        subtype_of => HasMethods['getline', 'close'],
+        test => sub { 1 },
+    },
+], __PACKAGE__);
+MooX::Types::MooseLike::register_types([
+    {
+        name => 'StringLike',
+        subtype_of => Object,
+        test => sub {
+            return unless overload::Method($_[0], '""');
+            !is_PSGIBodyObject($_[0]);
+        },
+    },
+], __PACKAGE__);
+{
+  local @EXPORT_OK;
+  MooX::Types::MooseLike::register_types([
+      {
+          name => '_Stringable',
+          subtype_of => AnyOf[Str, StringLike()],
+          test => sub { 1 },
+      }
+  ], __PACKAGE__);
+}
+MooX::Types::MooseLike::register_types([
+    {
+        name => 'PSGIBody',
+        subtype_of => AnyOf[
+          ArrayRef[_Stringable()],
+          FileHandle,
+          PSGIBodyObject(),
+        ],
+        test => sub { 1 },
+    },
+], __PACKAGE__);
+MooX::Types::MooseLike::register_types([
+    {
+        name => 'HTTPStatus',
+        subtype_of => Int,
+        test => sub { $_[0] =~ /^[1-5][0-9][0-9]$/ },
+    }
+], __PACKAGE__);
+MooX::Types::MooseLike::register_types([
+    {
+        name => 'HTTPHeaders',
+        subtype_of => InstanceOf['HTTP::Headers'],
+        test => sub { 1 },
+    }
+], __PACKAGE__);
 
-duck_type 'Web::Request::Types::PSGIBodyObject' => ['getline', 'close'];
+sub coerce_HTTPHeaders {
+    my $in = shift;
+    if (is_HTTPHeaders($in)) {
+        return $in;
+    }
+    elsif (is_ArrayRef($in)) {
+        return HTTP::Headers->new(@$in);
+    }
+    elsif (is_HashRef($in)) {
+        return HTTP::Headers->new(%$in);
+    }
+    return $in;
+}
+push @EXPORT_OK, 'coerce_HTTPHeaders';
 
-subtype 'Web::Request::Types::PSGIBody',
-    as 'ArrayRef[Str|Web::Request::Types::StringLike]|FileHandle|Web::Request::Types::PSGIBodyObject';
-
-subtype 'Web::Request::Types::HTTPStatus',
-    as 'Int',
-    where { /^[1-5][0-9][0-9]$/ };
-
-subtype 'Web::Request::Types::HTTP::Headers',
-    as 'HTTP::Headers';
-coerce 'Web::Request::Types::HTTP::Headers',
-    from 'ArrayRef',
-    via { HTTP::Headers->new(@$_) },
-    from 'HashRef',
-    via { HTTP::Headers->new(%$_) };
-
-coerce 'Web::Request::Types::PSGIBody',
-    from 'Str|Web::Request::Types::StringLike',
-    via { [ $_ ] };
+sub coerce_PSGIBody {
+    my $in = shift;
+    if (is_PSGIBody($in)) {
+        return $in;
+    }
+    elsif (is__Stringable($in)) {
+        return [ $in ];
+    }
+    return $in;
+}
+push @EXPORT_OK, 'coerce_PSGIBody';
 
 1;

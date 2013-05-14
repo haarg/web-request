@@ -1,8 +1,9 @@
 package Web::Request;
-use Moose;
+use Moo;
+use MooX::HandlesVia;
 # ABSTRACT: common request class for web frameworks
 
-use Class::Load ();
+use Module::Runtime qw(require_module);
 use Encode ();
 use HTTP::Body ();
 use HTTP::Headers ();
@@ -10,6 +11,9 @@ use HTTP::Message::PSGI ();
 use Stream::Buffered ();
 use URI ();
 use URI::Escape ();
+use MooX::Types::MooseLike::Base qw(:all);
+use Carp;
+use namespace::clean;
 
 =head1 SYNOPSIS
 
@@ -49,10 +53,10 @@ Plack::Request has a more minimalist goal.
 =cut
 
 has env => (
-    traits   => ['Hash'],
     is       => 'ro',
-    isa      => 'HashRef',
+    isa      => HashRef,
     required => 1,
+    handles_via => ['Hash'],
     handles  => {
         address         => [ get => 'REMOTE_ADDR' ],
         remote_host     => [ get => 'REMOTE_HOST' ],
@@ -74,7 +78,7 @@ has env => (
 
 has _base_uri => (
     is      => 'ro',
-    isa     => 'Str',
+    isa     => Str,
     lazy    => 1,
     default => sub {
         my $self = shift;
@@ -91,14 +95,14 @@ has _base_uri => (
 
 has base_uri => (
     is      => 'ro',
-    isa     => 'URI',
+    isa     => InstanceOf['URI'],
     lazy    => 1,
     default => sub { URI->new(shift->_base_uri)->canonical },
 );
 
 has uri => (
     is      => 'ro',
-    isa     => 'URI',
+    isa     => InstanceOf['URI'],
     lazy    => 1,
     default => sub {
         my $self = shift;
@@ -131,7 +135,7 @@ has uri => (
 
 has headers => (
     is      => 'ro',
-    isa     => 'HTTP::Headers',
+    isa     => InstanceOf['HTTP::Headers'],
     lazy    => 1,
     default => sub {
         my $self = shift;
@@ -150,7 +154,7 @@ has headers => (
 
 has cookies => (
     is      => 'ro',
-    isa     => 'HashRef',
+    isa     => HashRef,
     lazy    => 1,
     default => sub {
         my $self = shift;
@@ -174,14 +178,18 @@ has cookies => (
 
 has _http_body => (
     is  => 'rw',
-    isa => 'HTTP::Body',
+    isa => InstanceOf['HTTP::Body'],
 );
 
 has _parsed_body => (
-    traits  => ['Hash'],
     is      => 'ro',
-    isa     => 'HashRef',
+    isa     => HashRef,
     lazy    => 1,
+    handles_via => ['Hash'],
+    handles => {
+        _body    => [ get => 'body' ],
+        _uploads => [ get => 'uploads' ],
+    },
     default => sub {
         my $self = shift;
 
@@ -239,15 +247,11 @@ has _parsed_body => (
             uploads => $body->upload,
         }
     },
-    handles => {
-        _body    => [ get => 'body' ],
-        _uploads => [ get => 'uploads' ],
-    },
 );
 
 has query_parameters => (
     is      => 'ro',
-    isa     => 'HashRef[Str]',
+    isa     => HashRef[Str],
     lazy    => 1,
     clearer => '_clear_query_parameters',
     default => sub {
@@ -265,7 +269,7 @@ has query_parameters => (
 
 has all_query_parameters => (
     is      => 'ro',
-    isa     => 'HashRef[ArrayRef[Str]]',
+    isa     => HashRef[ArrayRef[Str]],
     lazy    => 1,
     clearer => '_clear_all_query_parameters',
     default => sub {
@@ -285,7 +289,7 @@ has all_query_parameters => (
 
 has body_parameters => (
     is      => 'ro',
-    isa     => 'HashRef[Str]',
+    isa     => HashRef[Str],
     lazy    => 1,
     clearer => '_clear_body_parameters',
     default => sub {
@@ -306,7 +310,7 @@ has body_parameters => (
 
 has all_body_parameters => (
     is      => 'ro',
-    isa     => 'HashRef[ArrayRef[Str]]',
+    isa     => HashRef[ArrayRef[Str]],
     lazy    => 1,
     clearer => '_clear_all_body_parameters',
     default => sub {
@@ -329,7 +333,7 @@ has all_body_parameters => (
 
 has uploads => (
     is      => 'ro',
-    isa     => 'HashRef[Web::Request::Upload]',
+    isa     => HashRef[InstanceOf['Web::Request::Upload']],
     lazy    => 1,
     default => sub {
         my $self = shift;
@@ -350,7 +354,7 @@ has uploads => (
 
 has all_uploads => (
     is      => 'ro',
-    isa     => 'HashRef[ArrayRef[Web::Request::Upload]]',
+    isa     => HashRef[ArrayRef[InstanceOf['Web::Request::Upload']]],
     lazy    => 1,
     default => sub {
         my $self = shift;
@@ -371,7 +375,7 @@ has all_uploads => (
 
 has _encoding_obj => (
     is        => 'rw',
-    isa       => 'Object', # no idea what this should be
+    isa       => Object, # no idea what this should be
     clearer   => '_clear_encoding_obj',
     predicate => 'has_encoding',
 );
@@ -404,7 +408,7 @@ sub new_from_request {
 sub new_response {
     my $self = shift;
 
-    Class::Load::load_class($self->response_class);
+    require_module($self->response_class);
     my $res = $self->response_class->new(@_);
     $res->_encoding_obj($self->_encoding_obj)
         if $self->has_encoding;
@@ -414,7 +418,7 @@ sub new_response {
 sub _new_upload {
     my $self = shift;
 
-    Class::Load::load_class($self->upload_class);
+    require_module($self->upload_class);
     $self->upload_class->new(@_);
 }
 
@@ -520,9 +524,6 @@ sub _clear_encoded_data {
 sub response_class   { 'Web::Response'        }
 sub upload_class     { 'Web::Request::Upload' }
 sub default_encoding { 'iso8859-1'            }
-
-__PACKAGE__->meta->make_immutable;
-no Moose;
 
 =head1 CONSTRUCTORS
 

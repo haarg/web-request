@@ -1,10 +1,13 @@
 package Web::Request::Upload;
-use Moose;
+use Moo;
 # ABSTRACT: class representing a file upload
 
 use HTTP::Headers;
 
-use Web::Request::Types;
+use Web::Request::Types qw(:all);
+use MooX::Types::MooseLike::Base qw(:all);
+use Carp;
+use namespace::clean;
 
 =head1 SYNOPSIS
 
@@ -27,31 +30,31 @@ L<Web::Request>.
 
 has headers => (
     is      => 'ro',
-    isa     => 'Web::Request::Types::HTTP::Headers',
-    coerce  => 1,
+    isa     => InstanceOf['HTTP::Headers'],
+    coerce  => \&coerce_HTTPHeaders,
     handles => ['content_type'],
 );
 
 has tempname => (
     is  => 'ro',
-    isa => 'Str',
+    isa => Str,
 );
 
 has size => (
     is  => 'ro',
-    isa => 'Int',
+    isa => Int,
 );
 
 has filename => (
     is  => 'ro',
-    isa => 'Str',
+    isa => Str,
 );
 
 # XXX Path::Class, and just make this a delegation?
 # would that work at all on win32?
 has basename => (
     is  => 'ro',
-    isa => 'Str',
+    isa => Str,
     lazy => 1,
     default => sub {
         my $self = shift;
@@ -66,9 +69,6 @@ has basename => (
         return $basename;
     },
 );
-
-__PACKAGE__->meta->make_immutable;
-no Moose;
 
 =method headers
 
